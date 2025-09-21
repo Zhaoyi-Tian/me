@@ -5,12 +5,17 @@ import { Image } from 'astro:assets'
 import PageLayout from '@/layouts/CommonPage.astro'
 import Substats from '@/components/about/Substats.astro'
 import ToolSection from '@/components/about/ToolSection.astro'
+import GameToolSection from '@/components/about/GameSection.astro'
 import '@/assets/styles/about.css'
 
 // 导入所有头像图片
 import profile1 from '/public/profile/1.jpg'
 import profile2 from '/public/profile/2.png'
 import profile3 from '/public/profile/3.png'
+
+// 导入游戏图标 - 这里使用占位图像，请替换为实际的游戏图标
+import genshinIcon from '/public/games/genshin.jpg'  // 请替换为实际的游戏图标
+
 
 const allProfiles = [profile1, profile2, profile3]
 const initialProfile = profile1
@@ -20,6 +25,7 @@ const headings = [
   { depth: 2, slug: 'education', text: '教育经历' },
   { depth: 2, slug: 'skills', text: '技能与工具' },
   { depth: 2, slug: 'interests', text: '个人兴趣' },
+  // { depth: 2, slug: 'games', text: '游戏清单' },
   { depth: 2, slug: 'social-networks', text: '社交网络' }
 ]
 ---
@@ -199,6 +205,39 @@ const headings = [
 
   <h2 id='interests'>个人兴趣</h2>
   <p>正在努力扩展自己的兴趣，学习了游泳，健身，正在练习弹吉他，吹竹笛</p>
+
+  <!-- <h2 id='games'>游戏清单</h2>
+  <GameToolSection
+    class='mb-5'
+    title='在玩'
+    tools={[
+      {
+        name: '崩坏：星穹铁道',
+        description: '',
+        href: 'https://genshin.mihoyo.com/',
+        icon: genshinIcon
+      },
+      {
+        name: '崩坏：星穹铁道',
+        description: '',
+        href: 'https://genshin.mihoyo.com/',
+        icon: genshinIcon
+      },
+      {
+        name: '崩坏：星穹铁道',
+        description: '',
+        href: 'https://genshin.mihoyo.com/',
+        icon: genshinIcon
+      },
+      {
+        name: '崩坏：星穹铁道',
+        description: '',
+        href: 'https://genshin.mihoyo.com/',
+        icon: genshinIcon
+      }
+
+    ]}
+  /> -->
 
   {/* social-networks */}
   <h2 id='social-networks'>社交网络</h2>

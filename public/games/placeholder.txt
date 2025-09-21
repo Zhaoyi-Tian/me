@@ -1,0 +1,11 @@
+将游戏PNG图标文件放在这个文件夹中
+例如:
+- genshin.png (原神)
+- pubg.png (绝地求生)
+- lol.png (英雄联盟)
+- minecraft.png (我的世界)
+- csgo.png (CS:GO)
+- apex.png (Apex英雄)
+等等
+
+图标建议尺寸：256x256 或 512x512 像素

@@ -1,0 +1,6 @@
+{
+    "terminal.integrated.fontSize": 14,
+    "editor.fontFamily": "‘Google Sans Code',Consolas, 'Courier New', monospace",
+    "editor.allowVariableFonts": true,
+    "terminal.integrated.fontFamily": "Consolas"
+}
