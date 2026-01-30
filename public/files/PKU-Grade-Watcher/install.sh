@@ -438,19 +438,25 @@ show_menu() {
 # ============ 主入口 ============
 main() {
     local cmd="${1:-}"
+
+    # 先检查安装状态，决定默认行为
+    if [[ ! -d "${INSTALL_DIR}/${REPO_NAME}" ]]; then
+        # 无论 cmd 是什么，只要未安装且 cmd 为空或 menu，都走安装流程
+        if [[ -z "$cmd" || "$cmd" == "menu" ]]; then
+             do_install
+             exit 0
+        fi
+        # 如果是其他命令（如 uninstall）但目前未安装，后续会有专门检查报错
+    fi
+
+    # 已安装后的逻辑
     case "$cmd" in
         install) do_install ;;
         run) do_run ;;
         status) do_status ;;
         config) do_config ;;
         uninstall) do_uninstall ;;
-        ""|menu) 
-            if [[ ! -d "${INSTALL_DIR}/${REPO_NAME}" ]]; then
-                do_install
-            else
-                show_menu 
-            fi
-            ;;
+        ""|menu) show_menu ;; # 空参数直接显示菜单
         *) echo "用法: $0 {install|run|status|config|uninstall}"; exit 1 ;;
     esac
 }
