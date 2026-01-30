@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # -*- encoding: utf-8 -*-
-# PKU Grade Watcher 一键安装脚本
-# 使用方法: bash <(curl -fsSL https://raw.githubusercontent.com/haierkeys/pku-grade-watcher/master/install.sh)
+# PKU Grade Watcher 一键安装脚本 (Linux Only)
+# 使用方法: bash <(curl -fsSL https://www.zhaoyi-tian.cn/files/PKU-Grade-Watcher/install.sh)
 
 set -euo pipefail
 
 # ============ 配置 ============
-REPO_URL="https://github.com/Zhaoyi-Tian/pku-grade-watcher.git"
+REPO_URL="https://gist.github.com/067769bcbe0efe581562dc946670efdb.git"
 INSTALL_DIR="${HOME}/.pku-grade-watcher"
 REPO_NAME="pku-grade-watcher"
 SERVICE_NAME="pku-grade-watcher.service"
 BIN_LINK="/usr/local/bin/pku-grade"
+
+# 获取脚本自身路径（兼容 curl | bash 方式）
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+if [[ -z "$SCRIPT_SOURCE" ]] || [[ ! -f "$SCRIPT_SOURCE" ]]; then
+    SCRIPT_SOURCE="$0"
+fi
 
 # 颜色
 RED='\033[0;31m'
@@ -25,21 +31,6 @@ log_success() { echo -e "${GREEN}[+]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 log_error() { echo -e "${RED}[-]${NC} $*"; }
 
-detect_os() {
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        echo "linux"
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "macos"
-    elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        echo "windows"
-    else
-        echo "unknown"
-    fi
-}
-
-is_linux() { [[ "$(detect_os)" == "linux" ]]; }
-is_macos() { [[ "$(detect_os)" == "macos" ]]; }
-
 check_python() {
     command -v python3 &>/dev/null || command -v python &>/dev/null
 }
@@ -47,50 +38,65 @@ check_python() {
 # ============ 安装流程 ============
 do_install() {
     echo ""
+    echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║                      免责声明                              ║${NC}"
+    echo -e "${RED}╠════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${RED}║  本工具仅供学习交流，严禁非法用途。                        ║${NC}"
+    echo -e "${RED}║  用户需承担使用本工具产生的一切后果。                      ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    echo -n "我已阅读并同意上述声明 (y/n): "
+    read -r confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        log_info "已取消安装"
+        exit 0
+    fi
+
+    echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       PKU Grade Watcher 安装          ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
     echo ""
 
-    local os
-    os=$(detect_os)
-    log_info "检测系统: $os"
+    log_info "检测系统: Linux"
 
     # 检查 Python
     if ! check_python; then
-        log_warn "未检测到 Python 3，请先安装 Python 3"
-        echo "  Linux: sudo apt install python3 python3-pip"
-        echo "  macOS: brew install python3"
+        log_warn "未检测到 Python 3，请先安装"
+        echo "  Debian/Ubuntu: sudo apt install python3 python3-pip"
+        echo "  RHEL/CentOS: sudo yum install python3 python3-pip"
         exit 1
     fi
     log_success "已检测到 Python"
 
-    # 克隆/更新仓库
+    # 检查是否已安装
     if [[ -d "${INSTALL_DIR}/${REPO_NAME}" ]]; then
-        log_warn "检测到已安装，正在更新..."
-        cd "${INSTALL_DIR}/${REPO_NAME}"
-        git pull
-    else
-        log_info "正在克隆仓库..."
-        mkdir -p "${INSTALL_DIR}"
-        git clone "$REPO_URL" "${INSTALL_DIR}/${REPO_NAME}"
+        log_error "已安装，如需重新安装请先卸载"
+        echo "  运行: pku-grade uninstall"
+        exit 1
     fi
+
+    log_info "正在克隆仓库..."
+    mkdir -p "${INSTALL_DIR}"
+    git clone "$REPO_URL" "${INSTALL_DIR}/${REPO_NAME}" || exit 1
 
     # 安装依赖
     log_info "正在安装依赖..."
-    pip3 install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" --user
+    pip3 install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" --user || exit 1
 
     # 配置
     create_config
+
+    # 复制 install.sh 到安装目录
+    cp "$SCRIPT_SOURCE" "${INSTALL_DIR}/${REPO_NAME}/install.sh"
+    chmod +x "${INSTALL_DIR}/${REPO_NAME}/install.sh"
 
     # 创建快捷命令
     create_bin_link
 
     # 设置服务
-    if is_linux; then
-        create_systemd_service
-    fi
-    setup_cron
+    create_systemd_service
 
     log_success "安装完成!"
     echo ""
@@ -99,10 +105,6 @@ do_install() {
 
 create_config() {
     local config_file="${INSTALL_DIR}/${REPO_NAME}/config.yaml"
-    if [[ -f "$config_file" ]]; then
-        log_warn "配置文件已存在，如需重新配置请使用 [4] 重新配置"
-        return
-    fi
 
     echo ""
     echo -e "${BLUE}请输入配置信息:${NC}"
@@ -118,60 +120,46 @@ create_config() {
     read -r sendkey
     echo ""
 
+    echo -n "查询间隔 (分钟, 建议 10-20): "
+    read -r interval
+    interval="${interval:-10}"
+
     cat > "$config_file" << EOF
 username: "$username"
 password: "$password"
 sendkey: "$sendkey"
+interval: $interval
 EOF
 
+    chmod 600 "$config_file"
     log_success "配置文件已创建"
 }
 
 create_bin_link() {
     local script_content="${INSTALL_DIR}/${REPO_NAME}/install.sh"
 
-    # 确保脚本文件存在（从当前脚本复制）
-    if [[ ! -f "$script_content" ]]; then
-        cp "$0" "$script_content"
-    fi
-
-    # 更新或创建快捷命令
     sudo rm -f "$BIN_LINK" 2>/dev/null || rm -f "$BIN_LINK"
-    sudo ln -sf "$script_content" "$BIN_LINK" 2>/dev/null || ln -sf "$script_content" "$BIN_LINK"
-    sudo chmod +x "$script_content" 2>/dev/null || chmod +x "$script_content"
-    log_success "快捷命令已更新: pku-grade"
+    sudo ln -sf "$script_content" "$BIN_LINK"
+    sudo chmod +x "$script_content"
+    log_success "快捷命令已创建: pku-grade"
 }
 
-create_systemd_service() {
-    if ! command -v systemctl &>/dev/null; then
-        return
-    fi
-
-    log_info "正在创建 systemd 服务..."
-
-    # 创建虚拟环境
-    local venv_dir="${INSTALL_DIR}/venv"
-    if [[ ! -d "$venv_dir" ]]; then
-        python3 -m venv "$venv_dir"
-        "$venv_dir/bin/pip" install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt"
-    fi
-
-    # 创建环境变量文件
+generate_env_file() {
+    log_info "正在生成环境文件 (.env)..."
+    parse_config || return 1
     local env_file="${INSTALL_DIR}/${REPO_NAME}/.env"
-    local config_file="${INSTALL_DIR}/${REPO_NAME}/config.yaml"
-    if [[ -f "$config_file" ]]; then
-        # 从 YAML 配置文件读取（移除引号）
-        local cfg_username cfg_password cfg_sendkey
-        cfg_username=$(grep "username:" "$config_file" | sed 's/username: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
-        cfg_password=$(grep "password:" "$config_file" | sed 's/password: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
-        cfg_sendkey=$(grep "sendkey:" "$config_file" | sed 's/sendkey: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
-
-        sudo tee "$env_file" > /dev/null << EOF
-username="$cfg_username"
-password="$cfg_password"
-sendkey="$cfg_sendkey"
+    rm -f "$env_file"
+    cat > "$env_file" << EOF
+username="$USERNAME"
+password="$PASSWORD"
+sendkey="$SENDKEY"
 EOF
-    fi
+    chmod 600 "$env_file"
+}
+
+install_systemd_units() {
+    parse_config || return 1
+    local venv_dir="${INSTALL_DIR}/venv"
 
     # 创建服务文件
     local service_file="/etc/systemd/system/${SERVICE_NAME}"
@@ -182,38 +170,66 @@ After=network.target
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 User=$USER
 WorkingDirectory=${INSTALL_DIR}/${REPO_NAME}
 EnvironmentFile=${INSTALL_DIR}/${REPO_NAME}/.env
-ExecStart=${venv_dir/bin/python} ${INSTALL_DIR}/${REPO_NAME}/main.py
+ExecStart=${venv_dir}/bin/python ${INSTALL_DIR}/${REPO_NAME}/main.py
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+    # 创建定时器文件
+    local timer_file="/etc/systemd/system/${REPO_NAME}.timer"
+    sudo tee "$timer_file" > /dev/null << EOF
+[Unit]
+Description=PKU Grade Watcher Timer
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=${INTERVAL}min
+AccuracySec=1s
+Unit=${SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+
     sudo systemctl daemon-reload
-    sudo systemctl enable "${SERVICE_NAME}"
-    log_success "systemd 服务已创建并开机自启"
+    sudo systemctl enable "${SERVICE_NAME}" "${REPO_NAME}.timer"
 }
 
-setup_cron() {
-    log_info "正在设置定时任务 (每 10 分钟)..."
+create_systemd_service() {
+    log_info "正在创建 systemd 服务..."
 
-    local work_dir="${INSTALL_DIR}/${REPO_NAME}"
-    local cron_cmd="cd ${work_dir} && python3 main.py"
-
-    # 添加定时任务
-    existing_cron=$(crontab -l 2>/dev/null | grep -v "pku-grade-watcher" || true)
-    new_cron=$(printf "%s\n*/10 * * * * %s\n" "$existing_cron" "$cron_cmd")
-    echo "$new_cron" | crontab -
-
-    # 启动 cron 服务
-    if command -v systemctl &>/dev/null; then
-        sudo systemctl start crond 2>/dev/null || sudo systemctl start cron 2>/dev/null || true
+    # 创建虚拟环境
+    local venv_dir="${INSTALL_DIR}/venv"
+    if [[ ! -d "$venv_dir" ]]; then
+        python3 -m venv "$venv_dir"
+        "$venv_dir/bin/pip" install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" -q
     fi
 
-    log_success "定时任务已设置: 每 10 分钟执行一次"
+    generate_env_file
+    install_systemd_units
+    
+    # 立即运行一次服务
+    sudo systemctl start "${SERVICE_NAME}"
+    # 启动定时器
+    sudo systemctl start "${REPO_NAME}.timer"
+    
+    log_success "systemd 服务已创建并已立即运行"
+}
+
+# ============ 配置解析 ============
+parse_config() {
+    local config_file="${INSTALL_DIR}/${REPO_NAME}/config.yaml"
+    [[ -f "$config_file" ]] || return 1
+
+    USERNAME=$(grep "username:" "$config_file" | sed 's/username: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
+    PASSWORD=$(grep "password:" "$config_file" | sed 's/password: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
+    SENDKEY=$(grep "sendkey:" "$config_file" | sed 's/sendkey: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
+    INTERVAL=$(grep "interval:" "$config_file" | sed 's/interval: *\([0-9]*\)/\1/' | tr -d ' ')
+    INTERVAL="${INTERVAL:-10}"
 }
 
 # ============ 运行程序 ============
@@ -227,12 +243,14 @@ do_run() {
 
     # 加载环境变量
     if [[ -f ".env" ]]; then
-        set -a
-        source .env
-        set +a
+        set -a; source .env
     fi
 
-    python3 main.py
+    local log_file="${INSTALL_DIR}/${REPO_NAME}/run.log"
+
+    log_info "正在运行..."
+    python3 main.py 2>&1 | tee "$log_file"
+    log_success "运行完成，日志已保存"
 }
 
 # ============ 查看状态 ============
@@ -249,27 +267,67 @@ do_status() {
         return
     fi
 
-    # 检查 cron
-    if crontab -l 2>/dev/null | grep -q "pku-grade-watcher"; then
-        log_success "定时任务: 已设置"
-    else
-        log_warn "定时任务: 未设置"
-    fi
-
     # 检查 systemd
-    if is_linux && command -v systemctl &>/dev/null; then
+    if command -v systemctl &>/dev/null; then
+        local timer_status="未设置"
+        if systemctl is-enabled "${REPO_NAME}.timer" &>/dev/null; then
+            timer_status="已启用"
+            if systemctl is-active "${REPO_NAME}.timer" &>/dev/null; then
+                timer_status="运行中"
+            fi
+        fi
+        echo -e "  定时器: ${timer_status}"
+
+        local service_status="未设置"
         if systemctl is-enabled "${SERVICE_NAME}" &>/dev/null; then
-            log_success "systemd 服务: 已启用开机自启"
-        else
-            log_warn "systemd 服务: 未启用"
+            service_status="已启用"
+        fi
+        echo -e "  服务: ${service_status}"
+
+        # 显示 timer 下次执行时间
+        local next_run
+        next_run=$(systemctl show "${REPO_NAME}.timer" --property=NextElapseUSecRealtime --value 2>/dev/null || echo "N/A")
+        if [[ "$next_run" != "N/A" && -n "$next_run" ]]; then
+            echo -e "  下次执行: ${next_run}"
+        fi
+
+        # 显示上次运行状态
+        local last_start
+        last_start=$(systemctl show "${SERVICE_NAME}" --property=ExecMainStartTimestamp --value 2>/dev/null || echo "N/A")
+        if [[ "$last_start" != "N/A" && -n "$last_start" ]]; then
+             echo -e "  上次运行: ${last_start}"
+             
+             local exit_code
+             exit_code=$(systemctl show "${SERVICE_NAME}" --property=ExecMainStatus --value 2>/dev/null || echo "N/A")
+             local result
+             result=$(systemctl show "${SERVICE_NAME}" --property=Result --value 2>/dev/null || echo "N/A")
+             
+             if [[ "$result" == "success" && "$exit_code" == "0" ]]; then
+                 echo -e "  运行结果: ${GREEN}成功${NC}"
+             else
+                 echo -e "  运行结果: ${RED}失败 (Code: ${exit_code}, Result: ${result})${NC}"
+             fi
+
+             echo ""
+             echo "  --- 最近日志 (Last 10 lines) ---"
+             sudo journalctl -u "${SERVICE_NAME}" -n 10 --no-pager --output cat 2>/dev/null | sed 's/^/  /' || echo "  (无法获取日志)"
         fi
     fi
 
-    # 上次执行
-    local last_run_log="${INSTALL_DIR}/${REPO_NAME}/.last_run"
-    if [[ -f "$last_run_log" ]]; then
-        echo ""
-        echo "上次运行: $(cat "$last_run_log")"
+    # 显示配置信息
+    echo ""
+    echo -e "${BLUE}当前配置:${NC}"
+    echo "================================"
+    if parse_config; then
+        echo "  用户名: ${USERNAME:-未设置}"
+        if [[ -n "$SENDKEY" ]]; then
+             echo "  推送: 已配置 ************"
+        else
+             echo "  推送: 未设置"
+        fi
+        echo "  间隔: ${INTERVAL:-10} 分钟"
+    else
+        echo "  (配置文件不存在)"
     fi
 }
 
@@ -284,14 +342,11 @@ do_config() {
     rm -f "$config_file"
     create_config
 
-    # 更新 .env
-    if is_linux && [[ -f "/etc/systemd/system/${SERVICE_NAME}" ]]; then
-        source "${INSTALL_DIR}/${REPO_NAME}/config.yaml" 2>/dev/null || true
-        cat > "${INSTALL_DIR}/${REPO_NAME}/.env" << EOF
-username="$username"
-password="$password"
-sendkey="$sendkey"
-EOF
+    generate_env_file
+    install_systemd_units
+
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl restart "${REPO_NAME}.timer"
     fi
 
     log_success "配置已更新"
@@ -299,7 +354,7 @@ EOF
 
 # ============ 卸载 ============
 do_uninstall() {
-    echo -n "确定要卸载吗? (y/n): "
+    echo -n "确定要完全卸载吗? 这将删除所有数据 (y/n): "
     read -r confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         log_info "已取消"
@@ -309,26 +364,25 @@ do_uninstall() {
     log_info "正在卸载..."
 
     # 停止并删除 systemd 服务
-    if is_linux && command -v systemctl &>/dev/null; then
+    if command -v systemctl &>/dev/null; then
+        log_info "停止 systemd 服务..."
+        sudo systemctl stop "${REPO_NAME}.timer" 2>/dev/null || true
+        sudo systemctl disable "${REPO_NAME}.timer" 2>/dev/null || true
+        sudo rm -f "/etc/systemd/system/${REPO_NAME}.timer"
+
         sudo systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
         sudo systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
         sudo rm -f "/etc/systemd/system/${SERVICE_NAME}"
+
         sudo systemctl daemon-reload 2>/dev/null || true
     fi
 
-    # 删除 cron 任务
-    if command -v crontab &>/dev/null; then
-        local current_cron
-        current_cron=$(crontab -l 2>/dev/null || true)
-        if echo "$current_cron" | grep -q "pku-grade-watcher"; then
-            echo "$current_cron" | grep -v "pku-grade-watcher" | crontab -
-        fi
-    fi
-
     # 删除快捷命令
+    log_info "删除快捷命令..."
     sudo rm -f "$BIN_LINK" 2>/dev/null || rm -f "$BIN_LINK" || true
 
     # 删除安装目录
+    log_info "删除安装目录..."
     rm -rf "${INSTALL_DIR}"
 
     log_success "卸载完成"
@@ -336,27 +390,25 @@ do_uninstall() {
 
 # ============ 交互式菜单 ============
 show_menu() {
-    clear
+    echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       PKU Grade Watcher 管理脚本      ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
     echo ""
-    echo "  [1] 安装/更新程序"
-    echo "  [2] 立即运行"
-    echo "  [3] 服务状态"
-    echo "  [4] 重新配置"
-    echo "  [5] 卸载"
+    echo "  [1] 立即运行"
+    echo "  [2] 服务状态"
+    echo "  [3] 重新配置"
+    echo "  [4] 卸载"
     echo "  [0] 退出"
     echo ""
 
     while true; do
-        read -p "请选择 [0-5]: " opt
+        read -p "请选择 [0-4]: " opt
         case "$opt" in
-            1) do_install; break ;;
-            2) do_run; break ;;
-            3) do_status; break ;;
-            4) do_config; break ;;
-            5) do_uninstall; break ;;
+            1) do_run; echo ""; read -p "按回车键返回菜单..."; show_menu; break ;;
+            2) do_status; echo ""; read -p "按回车键返回菜单..."; show_menu; break ;;
+            3) do_config; echo ""; read -p "按回车键返回菜单..."; show_menu; break ;;
+            4) do_uninstall; break ;;
             0) exit 0 ;;
             *) log_warn "无效选项，请重新选择" ;;
         esac
@@ -367,12 +419,18 @@ show_menu() {
 main() {
     local cmd="${1:-}"
     case "$cmd" in
-        install|i) do_install ;;
-        run|r) do_run ;;
-        status|s) do_status ;;
-        config|c) do_config ;;
-        uninstall|un) do_uninstall ;;
-        ""|menu) show_menu ;;
+        install) do_install ;;
+        run) do_run ;;
+        status) do_status ;;
+        config) do_config ;;
+        uninstall) do_uninstall ;;
+        ""|menu) 
+            if [[ ! -d "${INSTALL_DIR}/${REPO_NAME}" ]]; then
+                do_install
+            else
+                show_menu 
+            fi
+            ;;
         *) echo "用法: $0 {install|run|status|config|uninstall}"; exit 1 ;;
     esac
 }

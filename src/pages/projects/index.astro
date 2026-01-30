@@ -11,7 +11,7 @@ import wechat from '@/assets/wechat-qrcode.jpg'
 import sponsorsData from '@/data/sponsors.json'
 
 const headings = [
-  { depth: 2, slug: 'scripts', text: 'Theme' },
+  { depth: 2, slug: 'scripts', text: 'Scripts' },
   { depth: 2, slug: 'programs', text: 'Programs' },
   { depth: 2, slug: 'learnings', text: 'Learnings' },
   // { depth: 2, slug: 'others', text: 'Others' },
@@ -38,19 +38,14 @@ const headings = [
     <Icon class='size-5' name='receive-money' slot='before' />
   </Button>
 
-  <h2 id='scripts'>Theme</h2>
+  <h2 id='scripts'>Scripts</h2>
   <ProjectSection
     projects={[
       {
         name: '🍭 pku-grade watcher',
         description: '查分用，自动提醒',
         image: 'pku.png',
-        links: [
-          {
-            type: 'doc',
-            href: 'https://github.com/cworld1/astro-theme-pure/blob/main/src/content/blog/customize/index.md'
-          }
-        ]
+        links: []
       }
     ]}
   />
