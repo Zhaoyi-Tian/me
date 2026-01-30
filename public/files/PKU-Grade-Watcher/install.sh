@@ -32,7 +32,20 @@ log_warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 log_error() { echo -e "${RED}[-]${NC} $*"; }
 
 check_python() {
-    command -v python3 &>/dev/null || command -v python &>/dev/null
+    if command -v python3 &>/dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v python &>/dev/null; then
+        PYTHON_CMD="python"
+    else
+        return 1
+    fi
+
+    if ! "$PYTHON_CMD" -m pip --version &>/dev/null; then
+        return 2
+    fi
+    # 导出变量，使其在函数外可用
+    export PYTHON_CMD
+    return 0
 }
 
 # ============ 安装流程 ============
@@ -81,9 +94,16 @@ do_install() {
     mkdir -p "${INSTALL_DIR}"
     git clone "$REPO_URL" "${INSTALL_DIR}/${REPO_NAME}" || exit 1
 
+    # 创建虚拟环境
+    local venv_dir="${INSTALL_DIR}/venv"
+    if [[ ! -d "$venv_dir" ]]; then
+        log_info "正在创建虚拟环境..."
+        "$PYTHON_CMD" -m venv "$venv_dir"
+    fi
+    
     # 安装依赖
     log_info "正在安装依赖..."
-    pip3 install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" --user || exit 1
+    "${venv_dir}/bin/python" -m pip install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" || exit 1
 
     # 配置
     create_config
@@ -202,11 +222,11 @@ EOF
 create_systemd_service() {
     log_info "正在创建 systemd 服务..."
 
-    # 创建虚拟环境
+    # 虚拟环境已在 do_install 中创建，此处确保存在即可
     local venv_dir="${INSTALL_DIR}/venv"
     if [[ ! -d "$venv_dir" ]]; then
-        python3 -m venv "$venv_dir"
-        "$venv_dir/bin/pip" install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" -q
+        "$PYTHON_CMD" -m venv "$venv_dir"
+        "${venv_dir}/bin/python" -m pip install -r "${INSTALL_DIR}/${REPO_NAME}/requirements.txt" -q
     fi
 
     generate_env_file
@@ -249,7 +269,7 @@ do_run() {
     local log_file="${INSTALL_DIR}/${REPO_NAME}/run.log"
 
     log_info "正在运行..."
-    python3 main.py 2>&1 | tee "$log_file"
+    "${INSTALL_DIR}/venv/bin/python" main.py 2>&1 | tee "$log_file"
     log_success "运行完成，日志已保存"
 }
 
