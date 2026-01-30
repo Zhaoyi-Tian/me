@@ -13,7 +13,7 @@ SERVICE_NAME="pku-grade-watcher.service"
 BIN_LINK="/usr/local/bin/pku-grade"
 
 # 获取脚本自身路径（兼容 curl | bash 方式）
-SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
 if [[ -z "$SCRIPT_SOURCE" ]] || [[ ! -f "$SCRIPT_SOURCE" ]]; then
     SCRIPT_SOURCE="$0"
 fi
@@ -245,10 +245,10 @@ parse_config() {
     local config_file="${INSTALL_DIR}/${REPO_NAME}/config.yaml"
     [[ -f "$config_file" ]] || return 1
 
-    USERNAME=$(grep "username:" "$config_file" | sed 's/username: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
-    PASSWORD=$(grep "password:" "$config_file" | sed 's/password: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
-    SENDKEY=$(grep "sendkey:" "$config_file" | sed 's/sendkey: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'")
-    INTERVAL=$(grep "interval:" "$config_file" | sed 's/interval: *\([0-9]*\)/\1/' | tr -d ' ')
+    USERNAME=$(grep "username:" "$config_file" 2>/dev/null | sed 's/username: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'" || true)
+    PASSWORD=$(grep "password:" "$config_file" 2>/dev/null | sed 's/password: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'" || true)
+    SENDKEY=$(grep "sendkey:" "$config_file" 2>/dev/null | sed 's/sendkey: *"\?\(.*\)"\?/\1/' | tr -d '"' | tr -d "'" || true)
+    INTERVAL=$(grep "interval:" "$config_file" 2>/dev/null | sed 's/interval: *\([0-9]*\)/\1/' | tr -d ' ' || true)
     INTERVAL="${INTERVAL:-10}"
 }
 
@@ -410,6 +410,7 @@ do_uninstall() {
 
 # ============ 交互式菜单 ============
 show_menu() {
+    clear
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       PKU Grade Watcher 管理脚本      ║${NC}"
@@ -423,11 +424,12 @@ show_menu() {
     echo ""
 
     while true; do
-        read -p "请选择 [0-4]: " opt
+        echo -n "请选择 [0-4]: "
+        read -r opt
         case "$opt" in
-            1) do_run; echo ""; read -p "按回车键返回菜单..."; show_menu; break ;;
-            2) do_status; echo ""; read -p "按回车键返回菜单..."; show_menu; break ;;
-            3) do_config; echo ""; read -p "按回车键返回菜单..."; show_menu; break ;;
+            1) do_run; echo ""; echo -n "按回车键返回菜单..."; read -r; show_menu; break ;;
+            2) do_status; echo ""; echo -n "按回车键返回菜单..."; read -r; show_menu; break ;;
+            3) do_config; echo ""; echo -n "按回车键返回菜单..."; read -r; show_menu; break ;;
             4) do_uninstall; break ;;
             0) exit 0 ;;
             *) log_warn "无效选项，请重新选择" ;;
