@@ -149,13 +149,36 @@ EOF
     log_success "配置文件已创建"
 }
 
-create_bin_link() {
-    local script_content="${INSTALL_DIR}/${REPO_NAME}/install.sh"
+# ============ 安装脚本自安装 ============
+install_self_to_system() {
+    local src="$SCRIPT_SOURCE"
 
+    # 如果是通过 curl | bash 方式运行，脚本源文件不存在，需要从 URL 下载
+    if [[ ! -f "$src" ]] || [[ ! -s "$src" ]]; then
+        log_info "检测到通过管道运行，正在从远程下载安装脚本..."
+        local remote_url="https://www.zhaoyi-tian.cn/files/PKU-Grade-Watcher/install.sh"
+        curl -fsSL "$remote_url" -o "${INSTALL_DIR}/${REPO_NAME}/install.sh" || {
+            log_error "下载安装脚本失败"
+            return 1
+        }
+        src="${INSTALL_DIR}/${REPO_NAME}/install.sh"
+    fi
+
+    # 复制安装脚本到安装目录
+    cp -f "$src" "${INSTALL_DIR}/${REPO_NAME}/install.sh"
+    chmod +x "${INSTALL_DIR}/${REPO_NAME}/install.sh"
+
+    # 更新软链接
     sudo mkdir -p "$(dirname "$BIN_LINK")"
-    sudo ln -sf "$script_content" "$BIN_LINK"
-    sudo chmod +x "$script_content"
-    log_success "快捷命令已创建: pku-grade"
+    sudo ln -sf "${INSTALL_DIR}/${REPO_NAME}/install.sh" "$BIN_LINK"
+
+    log_success "安装脚本已保存至: ${INSTALL_DIR}/${REPO_NAME}/install.sh"
+    log_success "快捷命令已更新: pku-grade"
+}
+
+create_bin_link() {
+    # 复用 install_self_to_system 的逻辑
+    install_self_to_system
 }
 
 generate_env_file() {
