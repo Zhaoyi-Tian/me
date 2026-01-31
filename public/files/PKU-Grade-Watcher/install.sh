@@ -152,6 +152,7 @@ EOF
 # ============ 安装脚本自安装 ============
 install_self_to_system() {
     local src="$SCRIPT_SOURCE"
+    local downloaded=false
 
     # 如果是通过 curl | bash 方式运行，脚本源文件不存在，需要从 URL 下载
     if [[ ! -f "$src" ]] || [[ ! -s "$src" ]]; then
@@ -162,18 +163,40 @@ install_self_to_system() {
             return 1
         }
         src="${INSTALL_DIR}/${REPO_NAME}/install.sh"
+        downloaded=true
     fi
 
-    # 复制安装脚本到安装目录
-    cp -f "$src" "${INSTALL_DIR}/${REPO_NAME}/install.sh"
+    # 复制安装脚本到安装目录（如果未下载才需要复制）
+    if [[ "$downloaded" != "true" ]]; then
+        cp -f "$src" "${INSTALL_DIR}/${REPO_NAME}/install.sh"
+    fi
     chmod +x "${INSTALL_DIR}/${REPO_NAME}/install.sh"
 
     # 更新软链接
-    sudo mkdir -p "$(dirname "$BIN_LINK")"
-    sudo ln -sf "${INSTALL_DIR}/${REPO_NAME}/install.sh" "$BIN_LINK"
+    local link_dir
+    link_dir="$(dirname "$BIN_LINK")"
+    local need_sudo=""
 
-    log_success "安装脚本已保存至: ${INSTALL_DIR}/${REPO_NAME}/install.sh"
-    log_success "快捷命令已更新: pku-grade"
+    if [[ "$EUID" -ne 0 ]]; then
+        need_sudo="sudo"
+        # 尝试检查是否可以使用 sudo
+        if ! sudo -n true 2>/dev/null; then
+            log_info "需要 root 权限创建快捷命令，请输入密码..."
+        fi
+    fi
+
+    $need_sudo mkdir -p "$link_dir"
+    $need_sudo ln -sf "${INSTALL_DIR}/${REPO_NAME}/install.sh" "$BIN_LINK" || {
+        log_warn "创建快捷命令失败，请手动执行: sudo ln -sf ${INSTALL_DIR}/${REPO_NAME}/install.sh $BIN_LINK"
+    }
+
+    # 验证软链接是否创建成功
+    if [[ -L "$BIN_LINK" ]]; then
+        log_success "安装脚本已保存至: ${INSTALL_DIR}/${REPO_NAME}/install.sh"
+        log_success "快捷命令已更新: pku-grade"
+    else
+        log_warn "快捷命令创建失败，可手动创建: sudo ln -sf ${INSTALL_DIR}/${REPO_NAME}/install.sh $BIN_LINK"
+    fi
 }
 
 create_bin_link() {
