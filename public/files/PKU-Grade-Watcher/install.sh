@@ -449,7 +449,6 @@ do_uninstall() {
 
 # ============ 交互式菜单 ============
 show_menu() {
-    clear || true
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       PKU Grade Watcher 管理脚本      ║${NC}"
