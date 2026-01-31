@@ -59,8 +59,7 @@ do_install() {
     echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
-    echo -n "我已阅读并同意上述声明 (y/n): "
-    read -r confirm
+    read -rp "我已阅读并同意上述声明 (y/n): " confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         log_info "已取消安装"
         exit 0
@@ -129,19 +128,14 @@ create_config() {
     echo ""
     echo -e "${BLUE}请输入配置信息:${NC}"
 
-    echo -n "北京大学门户账号 (学号): "
-    read -r username
+    read -rp "北京大学门户账号 (学号): " username
 
-    echo -n "密码: "
-    read -r -s password
+    read -rsp "密码: " password
     echo ""
 
-    echo -n "Server 酱 sendkey (留空则不推送通知): "
-    read -r sendkey
-    echo ""
+    read -rp "Server 酱 sendkey (留空则不推送通知): " sendkey
 
-    echo -n "查询间隔 (分钟, 建议 10-20): "
-    read -r interval
+    read -rp "查询间隔 (分钟, 建议 10-20): " interval
     interval="${interval:-10}"
 
     cat > "$config_file" << EOF
@@ -158,7 +152,7 @@ EOF
 create_bin_link() {
     local script_content="${INSTALL_DIR}/${REPO_NAME}/install.sh"
 
-    sudo rm -f "$BIN_LINK" 2>/dev/null || rm -f "$BIN_LINK"
+    sudo mkdir -p "$(dirname "$BIN_LINK")"
     sudo ln -sf "$script_content" "$BIN_LINK"
     sudo chmod +x "$script_content"
     log_success "快捷命令已创建: pku-grade"
@@ -374,8 +368,7 @@ do_config() {
 
 # ============ 卸载 ============
 do_uninstall() {
-    echo -n "确定要完全卸载吗? 这将删除所有数据 (y/n): "
-    read -r confirm
+    read -rp "确定要完全卸载吗? 这将删除所有数据 (y/n): " confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         log_info "已取消"
         return
@@ -410,7 +403,7 @@ do_uninstall() {
 
 # ============ 交互式菜单 ============
 show_menu() {
-    clear
+    clear || true
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       PKU Grade Watcher 管理脚本      ║${NC}"
@@ -424,12 +417,11 @@ show_menu() {
     echo ""
 
     while true; do
-        echo -n "请选择 [0-4]: "
-        read -r opt
+        read -rp "请选择 [0-4]: " opt
         case "$opt" in
-            1) do_run; echo ""; echo -n "按回车键返回菜单..."; read -r; show_menu; break ;;
-            2) do_status; echo ""; echo -n "按回车键返回菜单..."; read -r; show_menu; break ;;
-            3) do_config; echo ""; echo -n "按回车键返回菜单..."; read -r; show_menu; break ;;
+            1) do_run; echo ""; read -rp "按回车键返回菜单..." ignore; show_menu; break ;;
+            2) do_status; echo ""; read -rp "按回车键返回菜单..." ignore; show_menu; break ;;
+            3) do_config; echo ""; read -rp "按回车键返回菜单..." ignore; show_menu; break ;;
             4) do_uninstall; break ;;
             0) exit 0 ;;
             *) log_warn "无效选项，请重新选择" ;;
