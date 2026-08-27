@@ -1,0 +1,43 @@
+---
+import type { MarkdownLayoutProps } from 'astro'
+
+import { BackToTop } from 'astro-pure/components/pages'
+import { Button } from 'astro-pure/user'
+import { cn } from 'astro-pure/utils'
+import 'katex/dist/katex.min.css'
+import PageLayout from '@/layouts/BaseLayout.astro'
+import { integ } from '@/site-config'
+
+import '@/assets/styles/interview.css'
+
+type Props = MarkdownLayoutProps<{
+  title: string
+  description: string
+  back?: string
+  ogImage?: string
+  noindex?: boolean
+}>
+
+const { frontmatter } = Astro.props
+const {
+  title,
+  description,
+  back = '/about',
+  ogImage = '/profile/1.jpg',
+  noindex = true
+} = frontmatter
+---
+
+<PageLayout meta={{ title, description, ogImage, noindex }} data-pagefind-ignore='all'>
+  <Button title='Back' href={back} style='back' />
+
+  <main class='mt-6 lg:mt-10'>
+    <article id='content-header' class='mx-auto min-w-0 max-w-[58rem]'>
+      <div id='content' class={cn('animate max-w-none overflow-x-hidden', integ.typography.class)}>
+        <slot />
+      </div>
+    </article>
+  </main>
+
+  <BackToTop header='content-header' content='content' />
+</PageLayout>

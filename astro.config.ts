@@ -1,4 +1,5 @@
 import { rehypeHeadingIds } from '@astrojs/markdown-remark'
+import sitemap from '@astrojs/sitemap'
 import vercel from '@astrojs/vercel'
 import AstroPureIntegration from 'astro-pure'
 import { defineConfig } from 'astro/config'
@@ -48,8 +49,9 @@ export default defineConfig({
   },
 
   integrations: [
-    // astro-pure will automatically add sitemap, mdx & unocss
-    // sitemap(),
+    // Keep unlisted interview pages out of the public sitemap.
+    sitemap({ filter: (page) => !new URL(page).pathname.startsWith('/i/') }),
+    // astro-pure will automatically add mdx & unocss
     // mdx(),
     AstroPureIntegration(config)
     // (await import('@playform/compress')).default({

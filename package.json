@@ -20,6 +20,7 @@
   "dependencies": {
     "@astrojs/check": "^0.9.4",
     "@astrojs/rss": "^4.0.11",
+    "@astrojs/sitemap": "^3.4.0",
     "@astrojs/vercel": "^8.1.4",
     "@playform/compress": "^0.1.9",
     "@unocss/preset-wind3": "^66.1.3",
