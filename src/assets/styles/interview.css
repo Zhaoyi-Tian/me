@@ -48,6 +48,44 @@
   margin-top: 0.35rem;
 }
 
+.interview-prompt {
+  color: hsl(var(--foreground) / 1);
+}
+
+.interview-prompt .expand-title > p {
+  color: hsl(var(--foreground) / 1);
+  font-weight: 600;
+}
+
+.interview-prompt .prompt-block,
+.interview-prompt .prompt-list {
+  min-width: 0;
+  margin: 0;
+}
+
+.interview-prompt .prompt-list {
+  padding-left: 1.35rem;
+}
+
+.interview-prompt .prompt-list > li + li {
+  margin-top: 1.25rem;
+}
+
+.interview-prompt .prompt-en,
+.interview-prompt .prompt-zh {
+  margin: 0;
+  color: hsl(var(--foreground) / 1);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.interview-prompt .prompt-zh {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid hsl(var(--border) / 70%);
+  line-height: 1.8;
+}
+
 @media (max-width: 720px) {
   .interview-summary {
     grid-template-columns: 1fr;

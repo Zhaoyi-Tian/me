@@ -7,6 +7,8 @@ ogImage: /profile/1.jpg
 noindex: true
 ---
 
+import { Collapse } from 'astro-pure/user'
+
 <div className='interview-summary'>
   <figure className='interview-photo'>
     <img src='/profile/1.jpg' alt='田照亿' width='300' height='300' loading='eager' />
@@ -48,9 +50,13 @@ noindex: true
 
 ## 笔试题实现（一）：RSI Demo
 
-参考 GEPA，我在 fold harness 上实现提示词的自演化，并通过 OPSD 将提示词回灌进模型权重，随后将提示词重置为极简版本，以此构成一代迭代。实验共迭代 3 代，数据集采用 SWE-bench Lite 的 300 道题目。
+参考 GEPA，我在 fold harness 上实现提示词的自演化，并通过 OPSD 将提示词回灌进模型权重，随后将提示词重置为空，以此构成一代迭代。实验共迭代 3 代，数据集采用 SWE-bench Lite 的 300 道题目。
 
 这里的 fold harness 是指：agent 拥有一个工具，可以创建继承完整上下文的子 agent。引入这一机制，主要是希望通过该特性让笔试题产生一些有趣的展开。
+
+每一轮迭代流程如下（以第一轮为例）：
+
+
 
 主要工作包括：
 
@@ -65,6 +71,78 @@ noindex: true
    - 为了充分利用 GPU，并行化后可以同时提出 32 条建议，并在验证集上同时验证 4 条建议。
 
 4. 在 verl 上实现 Qwen3.5-9B 的全量 OPSD 微调，并实现前向 KL。
+
+```python title="RSI-Demo：三代演化流程"
+W = W0                                      # 初始化模型权重
+P0 = ""                                     # 初始提示词为空
+
+for gen in [1, 2, 3]:                       # 共演化三代
+    pool = {P0}                             # 初始化本代候选池
+    val = {P0: eval(W, P0, D_val)}          # 评估初始提示词
+    front = build_front(val)                # 建立逐题最优候选集合
+
+    for rnd in [1, 2, 3, 4]:                # 每代进行四轮搜索
+        parent = sample(front)              # 按验证集表现概率采样父节点
+        batch = sample(D_train, 8)          # 抽取八道训练题
+
+        trace, old = roll(W, parent, batch)  # 运行父节点并收集轨迹
+        advice = reflect(trace)             # 根据轨迹提出一条建议
+        child = parent + advice             # 构造新的候选提示词
+
+        _, new = roll(W, child, batch)       # 在同一批题上重新评估
+
+        if sum(new) <= sum(old):             # 没有提升则丢弃
+            continue
+
+        val[child] = eval(W, child, D_val)   # 进入完整验证集评估
+        pool.add(child)                      # 将候选加入候选池
+        front = update(front, child, val)    # 更新逐题最优候选及采样概率
+
+    teacher = best(pool, val)                # 选出本代最佳提示词
+    W = opsd(W, P0, teacher)                 # 将提示词能力回灌到模型权重
+    P = P0                                   # 重置为空提示词
+
+test(W0, W1, W2, W3, D_test)                # 最后统一进行 held-out 评估
+```
+
+### 三代演化提示词
+
+<Collapse title='C1' class='interview-prompt'>
+
+<div className='prompt-block'>
+  <p className='prompt-en' lang='en'>When an agent identifies the root cause of a bug, it should immediately implement a fix in the same session rather than continuing to investigate. Analysis without action leads to investigation loops that exhaust the session without producing a working solution.</p>
+  <p className='prompt-zh'>当 agent 识别出 bug 的根本原因后，应当立即在同一个 session 中实现修复，而不是继续调查。只分析而不行动会造成调查循环，最终耗尽 session，却没有产出可运行的解决方案。</p>
+</div>
+
+</Collapse>
+
+<Collapse title='C2' class='interview-prompt'>
+
+<div className='prompt-block'>
+  <p className='prompt-en' lang='en'>Run the full test suite and verify all tests pass before submitting any fix. When fixing a bug, the agent should not only implement the code change but also verify it works end-to-end by running all relevant tests. If tests fail, investigate and fix them before submitting - don't just note them as "pre-existing bugs" or assume they're expected failures. This prevents incomplete fixes where the code change addresses the reported bug but breaks existing functionality or doesn't meet test expectations.</p>
+  <p className='prompt-zh'>在提交任何修复前，运行完整测试套件并确认所有测试通过。修复 bug 时，agent 不仅要完成代码修改，还应运行所有相关测试，对修复进行端到端验证。如果测试失败，应继续定位并修复；不要只把它们标记为“已有 bug”，也不要假定这些失败符合预期。这样可以避免修复不完整：代码改动虽然解决了报告中的 bug，却破坏了现有功能，或未满足测试预期。</p>
+</div>
+
+</Collapse>
+
+<Collapse title='C3' class='interview-prompt'>
+
+<ol className='prompt-list'>
+  <li>
+    <p className='prompt-en' lang='en'>Before implementing algorithmic fixes, the agent must read all relevant test files to understand expected behavior and run the full test suite to verify no regressions. The agent should implement defensive error handling when accessing code that may not exist in all cases, and validate changes against the complete test suite before concluding success.</p>
+    <p className='prompt-zh'>在实现算法修复前，agent 必须阅读所有相关测试文件，以理解预期行为，并运行完整测试套件，确认没有引入回归。在访问可能并非始终存在的代码对象时，agent 应加入防御性错误处理，并用完整测试套件验证修改，然后才能宣布成功。</p>
+  </li>
+  <li>
+    <p className='prompt-en' lang='en'>After implementing a fix for any bug, run the full test suite for the affected module (or the entire test suite if the fix spans multiple modules). Do not rely on targeted test selection, as regressions in untested areas will go undetected. The full test suite provides comprehensive coverage that catches edge cases, cross-module interactions, and subtle type invariants that limited test selection misses.</p>
+    <p className='prompt-zh'>实现任何 bug 修复后，运行受影响模块的完整测试套件；若修复跨越多个模块，则运行整个测试套件。不要只选择部分目标测试，因为这样会漏掉未测试区域中的回归。完整测试套件可以提供更全面的覆盖，发现边界情况、跨模块交互，以及有限测试选择容易遗漏的细微类型不变量问题。</p>
+  </li>
+  <li>
+    <p className='prompt-en' lang='en'>After identifying a code fix path, implement the complete solution immediately rather than continuing to explore. The agent must execute all necessary code changes and run tests before the session ends, not just reach a point where implementation is possible. Exploration without implementation wastes time and leads to task failure.</p>
+    <p className='prompt-zh'>确定代码修复路径后，应立即实现完整方案，而不是继续探索。agent 必须在 session 结束前完成所有必要的代码修改并运行测试，而不能只停留在“已经可以开始实现”的阶段。只探索而不实现会浪费时间，并导致任务失败。</p>
+  </li>
+</ol>
+
+</Collapse>
 
 ### 第一代 held-out 结果
 
@@ -103,3 +181,9 @@ $$
 | Manager |        9 |            7 |           6 |            94.63 / 126.85 |
 
 29 次完整搜索中，有 27 次找到可行实现，22 次超过我实现的基线。全局最优候选由线性搜索在第 14 个节点找到，得分为 **152.62**：CUDA 总时间从 **14.981 s** 降至 **12.327 s**（减少 17.7%，等价于加速 1.22×），峰值实际分配显存从 **8.50 GiB** 降至 **4.44 GiB**（减少 47.8%）。其核心是让 FlashAttention 反向传播直接写入最终梯度切片并复用缓冲区，从而避免临时梯度的分配与拷贝。在有限预算下，线性搜索最为稳定，这可能与不同搜索结构形成的树深差异有关。
+
+## 黎曼猜想
+
+基于 [Anthropic 的 Zeta23 Lean 形式化](https://github.com/anthropics/formal-math/tree/main/zeta23)，并沿用 [ainta/zeta-simple-zeros](https://github.com/ainta/zeta-simple-zeros) 保留谱缺陷、研究连续零点局部结构的路线，我将黎曼 ζ 函数临界线上简单零比例的[端到端 Lean 纪录推进到 67.3%](https://github.com/Zhaoyi-Tian/zeta-simple-zeros-lean)，刷新了目前的形式化证明 SOTA。此前 Zeta23、三点证书和四点证书分别达到 67.25007%、67.27373% 和 67.28470%；但推广到七点时，问题迅速膨胀为六维证书，传统区间穷举需要近百万节点，完整形式化预计消耗约 1000 CPU-hours。
+
+我们发现了隐藏在七点目标中的稀疏数学结构：将 21 个点对压缩为 15 条关键边，并结合 12 段 phase-affine 包络与精确 Farkas 对偶证书，把百万量级搜索压缩到 1,063 个节点、532 个叶子，最终将端到端 Lean 验证时间降至约 1 小时。这一架构不局限于七点，也为进一步冲击八点、九点证书和更高形式化纪录打开了路径。
