@@ -28,7 +28,6 @@ import { Collapse } from 'astro-pure/user'
     <section aria-labelledby='courses-heading'>
       <h2 id='courses-heading'>相关课程成绩</h2>
       <p>大一上平均分 93，成绩位列信科前 10%（前 10% 的加权平均分为 91）。</p>
-      <p>相关课程：人工智能引论（94）、具身智能与通用智能体（94）、计算概论 B（95）、程序设计实习（91）、凸分析与优化方法（87）。</p>
     </section>
 
   </div>
@@ -38,9 +37,7 @@ import { Collapse } from 'astro-pure/user'
 
 目前主要尝试改进 PO 类算法，包括提出想法、设计实验并验证结果，相关方向仍处于探索阶段。在此过程中，我也对若干算法进行了实践。
 
-- 在 DAPO-math 14k 上复现 DAPO 算法。
-
-- 在 Tmax 构造的数据集上复现 DPPO 算法，并搭建对应的 Docker 端到端训练环境，处理环境搭建过程中遇到的网络问题。
+- 在 Tmax 构造的数据集上复现 DAPO 算法，并搭建对应的 Docker 端到端训练环境，处理环境搭建过程中遇到的网络问题。
 
   训练期间出现了格式坍塌：GRPO 仍会奖励“错误调用工具但最终成功”的轨迹。在固定的 256 题验证集中，出现格式错误的 session 比例在 checkpoint 30–40 间由 7.0% 升至 56.6%。对此，我将错误工具调用直接截断并给予 0 奖励（模型的 harness 仅提供 Bash 这一种命令），不对参数错误作额外处理。调整后，格式错误率稳定在较低水平，因此最终没有继续探索 well-formedness rewards。
 
@@ -54,9 +51,7 @@ import { Collapse } from 'astro-pure/user'
 
 这里的 fold harness 是指：agent 拥有一个工具，可以创建继承完整上下文的子 agent。引入这一机制，主要是希望通过该特性让笔试题产生一些有趣的展开。
 
-每一轮迭代流程如下（以第一轮为例）：
-
-
+整个流程包含提示词搜索和权重更新两层循环。记初始模型权重为 $W_0$。第 $i$ 代在当前模型权重 $W_{i-1}$ 上进行 4 轮提示词搜索：每一轮从已有候选提示词中选择一个作为起点，并追加一条独立建议，最终得到该代最佳提示词 $C_i$。随后，在相同模型权重下，让 teacher 额外看到 $C_i$、student 使用空提示词，通过 OPSD 得到下一代权重 $W_i$。因此，$W_0+C_1$ 表示在初始模型上直接使用第一代提示词，$W_1$ 则表示已将 $C_1$ 蒸馏进权重，并重新使用空提示词的模型。
 
 主要工作包括：
 
@@ -66,44 +61,25 @@ import { Collapse } from 'astro-pure/user'
 
 3. 实现 GEPA 演化的完整流程：
 
-   - 从 train 集中抽取 8 条轨迹并提出一条建议，首先观察该建议在 8 条原始轨迹上能否带来提升；确认提升后，再进入验证集评估。
-   - 验证集为每道题维护得分最高的建议；选择下一轮父节点时，则根据各父节点的验证集总分进行概率采样。
+   - 从 train 集中抽取 8 道题并运行得到轨迹，再基于这些轨迹提出一条建议；首先观察该建议在这 8 道题上能否带来提升，确认提升后，再进入验证集评估。
+   - 验证集为每道题维护得分最高的候选提示词；下一轮根据各候选提示词的验证集总分进行概率采样，并以选中的候选提示词作为继续追加建议的起点。
    - 为了充分利用 GPU，并行化后可以同时提出 32 条建议，并在验证集上同时验证 4 条建议。
 
 4. 在 verl 上实现 Qwen3.5-9B 的全量 OPSD 微调，并实现前向 KL。
 
-```python title="RSI-Demo：三代演化流程"
-W = W0                                      # 初始化模型权重
-P0 = ""                                     # 初始提示词为空
+### 第一代 held-out 结果
 
-for gen in [1, 2, 3]:                       # 共演化三代
-    pool = {P0}                             # 初始化本代候选池
-    val = {P0: eval(W, P0, D_val)}          # 评估初始提示词
-    front = build_front(val)                # 建立逐题最优候选集合
+每组使用相同的 60 道 held-out 题目，每题采样 4 次。下表中，W0 表示使用空提示词的初始模型；W0 + C1 表示在初始模型上直接使用第一代演化提示词 C1；W1 表示通过 OPSD 将 C1 蒸馏进模型权重后，重新使用空提示词的模型。
 
-    for rnd in [1, 2, 3, 4]:                # 每代进行四轮搜索
-        parent = sample(front)              # 按验证集表现概率采样父节点
-        batch = sample(D_train, 8)          # 抽取八道训练题
+| 模型 / 提示 | mean@4 | pass@4 |
+| ----------- | -----: | -----: |
+| W0          | 0.2333 | 0.3167 |
+| W0 + C1     | 0.2375 | 0.3333 |
+| W1          | **0.2958** | **0.4000** |
 
-        trace, old = roll(W, parent, batch)  # 运行父节点并收集轨迹
-        advice = reflect(trace)             # 根据轨迹提出一条建议
-        child = parent + advice             # 构造新的候选提示词
+第一代权重回灌后，W1 相较 W0 的 mean@4 提升 6.25 个百分点，pass@4 提升 8.33 个百分点。后续两代未能延续这一提升，第三代出现明显退化，因此当前结果主要验证了完整流程能够运行，但多代演化的稳定性仍未解决。
 
-        _, new = roll(W, child, batch)       # 在同一批题上重新评估
-
-        if sum(new) <= sum(old):             # 没有提升则丢弃
-            continue
-
-        val[child] = eval(W, child, D_val)   # 进入完整验证集评估
-        pool.add(child)                      # 将候选加入候选池
-        front = update(front, child, val)    # 更新逐题最优候选及采样概率
-
-    teacher = best(pool, val)                # 选出本代最佳提示词
-    W = opsd(W, P0, teacher)                 # 将提示词能力回灌到模型权重
-    P = P0                                   # 重置为空提示词
-
-test(W0, W1, W2, W3, D_test)                # 最后统一进行 held-out 评估
-```
+问题的难点在于 reflector 的设计，如果给其充足的环境信号并进行合理组织筛选，如何保留其多样性不至于坍塌，如何让其给出足够 focus 的建议不被表面证据误导，都是还需继续探索与迭代的。
 
 ### 三代演化提示词
 
@@ -144,20 +120,6 @@ test(W0, W1, W2, W3, D_test)                # 最后统一进行 held-out 评估
 
 </Collapse>
 
-### 第一代 held-out 结果
-
-每组使用相同的 60 道 held-out 题目，每题采样 4 次。
-
-| 模型 / 提示 | resolved / 240 | mean@4 | pass@4 |
-| ----------- | -------------: | -----: | -----: |
-| W0          |             56 | 0.2333 | 0.3167 |
-| W0 + C1     |             57 | 0.2375 | 0.3333 |
-| W1          |         **71** | **0.2958** | **0.4000** |
-
-第一代权重回灌后，W1 相较 W0 的 resolved 数增加 15，mean@4 提升 6.25 个百分点，pass@4 提升 8.33 个百分点。后续两代未能延续这一提升，第三代出现明显退化，因此当前结果主要验证了完整流程能够运行，但多代演化的稳定性仍未解决。
-
-问题的难点在于 reflector 的设计，如果给其充足的环境信号并进行合理组织筛选，如何保留其多样性不至于坍塌，如何让其给出足够 focus 的建议不被表面证据误导，都是还需继续探索与迭代的。
-
 ## 笔试题实现（二）：AutoResearch Demo
 
 针对我实际遇到的树 attention kernel 速度与显存问题，使用真实数据建立 benchmark，并在其上进行 AutoResearch 演化。
@@ -184,6 +146,30 @@ $$
 
 ## 笔试题实现（三）：黎曼猜想
 
-基于 [Anthropic 的 Zeta23 Lean 形式化](https://github.com/anthropics/formal-math/tree/main/zeta23)，并沿用 [ainta/zeta-simple-zeros](https://github.com/ainta/zeta-simple-zeros) 保留谱缺陷、研究连续零点局部结构的路线，我将黎曼 ζ 函数临界线上简单零比例的[端到端 Lean 纪录推进到 67.3%](https://github.com/Zhaoyi-Tian/zeta-simple-zeros-lean)，刷新了目前的形式化证明 SOTA。此前 Zeta23、三点证书和四点证书分别达到 67.25007%、67.27373% 和 67.28470%；但推广到七点时，问题迅速膨胀为六维证书，传统区间穷举需要近百万节点，完整形式化预计消耗约 1000 CPU-hours。
+这里比较的不是黎曼猜想本身，而是简单临界线零比例 $N_0^s(T,2T)/N(T,2T)$ 的无条件渐近下界。沿着传统解析证明、局部证书和形式化验证三条线索，关键进展可以整理如下：
+
+| 代表成果 | 比例下界 | 关键结构 | 证明边界 |
+| --- | ---: | --- | --- |
+| [Levinson—Conrey—PRZZ](https://arxiv.org/html/2608.13637v2#S1.SS3) | $1/3\to {>}2/5\to5/12$ | mollifier 方法持续优化 | 无条件解析证明 |
+| [Anthropic Zeta23](https://arxiv.org/abs/2608.13637) | 67.25007% | Weil Hermitian form、rank–trace 与 Sylvester inertia | 无条件、端到端 Lean |
+| [teal-sea 三点 / 四点证书](https://zeta.teal-sea.com/) | 67.27373% / 67.28470% | 三点、四点局部结构 | 无条件、端到端 Lean，并经 Palomar 重放 |
+| [ainta 七点证书](https://github.com/ainta/zeta-simple-zeros) | 67.30085% | 保留谱缺陷，利用七点、六个连续 gap | 解析论证 + Arb 区间证书，研究草稿 |
+| [阶段一：稀疏七点证书](https://github.com/Zhaoyi-Tian/zeta-simple-zeros-lean/tree/main/ZetaSimpleZero673) | **67.3%** | 15 条关键边、12 段 phase-affine 包络、Farkas 对偶证书 | 无条件、端到端 Lean |
+| [Bellman](https://github.com/tawanerguo-cn/zeta-simple-zeros) / [position pressure](https://github.com/sxuff/zeta-positioned-pressure) | 67.31929%–67.32060% | Bellman coboundary、位置相关 pressure | 外部区间 / MPFR 证书，研究草稿 |
+| [九点证书](https://github.com/trmdy/zeta-simple-zeros-673137) / [双证书组合](https://github.com/yuhangshi888/zeta-simple-zeros-673316977) | 67.33127%–67.33170% | 九点局部约束、$\Phi_m$ supporting plane | 外部区间输入 + 局部 Lean，研究草稿 |
+| [AMTOPA exact-pressure](https://github.com/AMTOPA/zeta-exact-pressure) | 67.3416490971% | 17 项窗口与 exact position pressure | 项目方报告的区间认证研究草稿，非端到端 Lean |
+| [阶段二：统一 interface](https://github.com/Zhaoyi-Tian/zeta-simple-zeros-lean/tree/main/frontier) | **67.34%**（Lean 内部 67.3401159%） | window–energy–pressure–defect interface | 无条件、端到端 Lean |
+
+这张表按方法演进而非单纯按小数大小排序：当前公开的最高区间候选略高于阶段二，但阶段二的定位是把对应结构闭合为端到端 Lean 证明。$19/27=70.37\%$ 没有列入表中，因为它是 RH 条件下、基于 $\zeta'(\rho)$ 离散 mollified moments 的另一条路线，并不是当前的无条件结果。
+
+### 阶段一：稀疏七点证书
+
+第一阶段基于 [Anthropic 的 Zeta23 Lean 形式化](https://github.com/anthropics/formal-math/tree/main/zeta23)，并沿用 [ainta/zeta-simple-zeros](https://github.com/ainta/zeta-simple-zeros) 保留谱缺陷、研究连续零点局部结构的路线，将端到端 Lean 纪录推进到 67.3%。但推广到七点时，问题迅速膨胀为六维证书，传统区间穷举需要近百万节点，完整形式化预计消耗约 1000 CPU-hours。
 
 我们发现了隐藏在七点目标中的稀疏数学结构：将 21 个点对压缩为 15 条关键边，并结合 12 段 phase-affine 包络与精确 Farkas 对偶证书，把百万量级搜索压缩到 1,063 个节点、532 个叶子，最终将端到端 Lean 验证时间降至约 1 小时。这一架构不局限于七点，也为进一步冲击八点、九点证书和更高形式化纪录打开了路径。
+
+### 阶段二：统一 interface
+
+完成 67.3% 的第一阶段后，我没有继续堆叠算力或机械调参，而是提出了一个结构性猜想：这些窗口、局部证书、pressure 和谱缺陷的改进背后，应当存在一个统一的数学实体。我先用 Python 分析 [zeta-exact-pressure](https://github.com/AMTOPA/zeta-exact-pressure) 的数值结果与活跃约束，再将其提炼为 window–energy–pressure–defect interface。
+
+在这一 interface 中，同一个窗口同时决定全局 trace rate 和局部 kernel；七点 pair loads 与位置相关 pressure 将局部 gap 信息运输到同一个 canonical spectral defect，最终在两条方向相反的不等式中将其精确消元。基于这一结构，我们形式化了包含 16 个有理 Fourier 修正的窗口，并选择 132 点 block、126 个七点滑动窗口，使累计增益严格落在谱缺陷的线性 cap-one 区域。Lean 内部得到 67.3401159% 的比例下界，安全取整为 67.34%，形成无条件的端到端 Lean 证明。这一阶段的关键不再是某组更好的参数，而是完成了从 Python 发现坐标、抽取可复用数学抽象，到 Lean 验证其作用于 ζ 零点的完整闭环。
